@@ -1,5 +1,5 @@
-streamlit==1.35.0
-streamlit-webrtc==0.45.0
-ultralytics==8.1.29
-Pillow==10.2.0
-numpy==1.26.4
+streamlit
+streamlit-webrtc
+ultralytics
+Pillow
+numpy
