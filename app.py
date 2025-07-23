@@ -1,45 +1,56 @@
 import streamlit as st
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
 import av
-import cv2
+from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 from ultralytics import YOLO
 import time
 
+# Load YOLOv8 model
 model = YOLO('weights/yolov8n.pt')
-PERSON_CLASS_ID = 0  
+PERSON_CLASS_ID = 0
 
 st.set_page_config(page_title="YOLOv8 Real-time Human Detection", layout="wide")
 st.title("YOLOv8 Real-Time Human Detection")
+st.markdown("This app uses your webcam to detect people in real-time using YOLOv8 Nano (no OpenCV).")
 
-st.markdown("""
-This app uses your webcam to detect people in real-time using YOLOv8 Nano.
-""")
+# Helper to draw bounding boxes using PIL
+def draw_boxes(image_np, boxes):
+    image_pil = Image.fromarray(image_np)
+    draw = ImageDraw.Draw(image_pil)
 
+    for box in boxes:
+        cls = int(box.cls)
+        conf = float(box.conf)
+        if cls == PERSON_CLASS_ID:
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            draw.rectangle([x1, y1, x2, y2], outline="green", width=2)
+            draw.text((x1, y1 - 10), f"Person: {conf:.2f}", fill="green")
+
+    return np.array(image_pil)
+
+# Streamlit WebRTC video processor
 class YOLOVideoProcessor(VideoProcessorBase):
     def __init__(self):
         self.model = model
 
     def recv(self, frame):
-        img = frame.to_ndarray(format="bgr24")
+        image = frame.to_ndarray(format="bgr24")
+        image_rgb = image[..., ::-1]  # Convert BGR to RGB for PIL
+
         start = time.time()
-        result = self.model.predict(img)[0]
-
-        for box in result.boxes:
-            class_id = int(box.cls)
-            conf = box.conf.item()
-            if class_id == PERSON_CLASS_ID:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                label = f'Person: {conf:.2f}'
-                cv2.putText(img, label, (x1, y1 - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,0), 2)
+        result = self.model.predict(image_rgb)[0]
+        image_out = draw_boxes(image_rgb, result.boxes)
         end = time.time()
-        fps = 1 / (end - start) if (end - start) > 0 else 0
-        cv2.putText(img, f'FPS: {fps:.2f}', (20, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-        return av.VideoFrame.from_ndarray(img, format="bgr24")
 
+        # Add FPS counter
+        fps = 1 / (end - start) if (end - start) > 0 else 0
+        image_pil = Image.fromarray(image_out)
+        draw = ImageDraw.Draw(image_pil)
+        draw.text((20, 30), f"FPS: {fps:.2f}", fill="red")
+        return av.VideoFrame.from_ndarray(np.array(image_pil), format="rgb24")
+
+# Start the webcam streamer
 webrtc_streamer(
     key="yolo-stream",
     video_processor_factory=YOLOVideoProcessor,
