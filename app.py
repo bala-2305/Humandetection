@@ -1,20 +1,18 @@
 import streamlit as st
 from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
-import av
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 import numpy as np
 from ultralytics import YOLO
 import time
 
 # Load YOLOv8 model
-model = YOLO('weights/yolov8n.pt')
+model = YOLO("weights/yolov8n.pt")
 PERSON_CLASS_ID = 0
 
 st.set_page_config(page_title="YOLOv8 Real-time Human Detection", layout="wide")
 st.title("YOLOv8 Real-Time Human Detection")
-st.markdown("This app uses your webcam to detect people in real-time using YOLOv8 Nano (no OpenCV).")
+st.markdown("This app uses your webcam to detect people in real-time using YOLOv8 Nano (no OpenCV, no av import).")
 
-# Helper to draw bounding boxes using PIL
 def draw_boxes(image_np, boxes):
     image_pil = Image.fromarray(image_np)
     draw = ImageDraw.Draw(image_pil)
@@ -29,28 +27,26 @@ def draw_boxes(image_np, boxes):
 
     return np.array(image_pil)
 
-# Streamlit WebRTC video processor
 class YOLOVideoProcessor(VideoProcessorBase):
     def __init__(self):
         self.model = model
 
     def recv(self, frame):
-        image = frame.to_ndarray(format="bgr24")
-        image_rgb = image[..., ::-1]  # Convert BGR to RGB for PIL
+        img = frame.to_ndarray(format="bgr24")
+        img_rgb = img[..., ::-1]
 
         start = time.time()
-        result = self.model.predict(image_rgb)[0]
-        image_out = draw_boxes(image_rgb, result.boxes)
-        end = time.time()
+        result = self.model.predict(img_rgb, verbose=False)[0]
+        processed = draw_boxes(img_rgb, result.boxes)
 
-        # Add FPS counter
-        fps = 1 / (end - start) if (end - start) > 0 else 0
-        image_pil = Image.fromarray(image_out)
+        fps = 1 / (time.time() - start + 1e-6)
+        image_pil = Image.fromarray(processed)
         draw = ImageDraw.Draw(image_pil)
         draw.text((20, 30), f"FPS: {fps:.2f}", fill="red")
-        return av.VideoFrame.from_ndarray(np.array(image_pil), format="rgb24")
 
-# Start the webcam streamer
+        return image_pil
+
+# Launch the webcam
 webrtc_streamer(
     key="yolo-stream",
     video_processor_factory=YOLOVideoProcessor,
